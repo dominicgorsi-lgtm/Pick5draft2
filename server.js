@@ -1,15 +1,15 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { weekDeadlines, gradePick, validSelections, payout } from './rules.js';
-import { fetchSpreads, fetchScores } from './odds.js';
 const root=dirname(fileURLToPath(import.meta.url));
-const path=process.env.DATABASE_PATH||join(root,'data/pool.sqlite');
-mkdirSync(dirname(path),{recursive:true});
-const db=new DatabaseSync(path); db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
+// Interview branch: deliberate vulnerabilities, isolated from the real pool.
+if(process.env.INTERVIEW_LAB!=='true') throw new Error('Run npm run interview to opt into the local vulnerability lab.');
+if(process.env.HOST && process.env.HOST!=='127.0.0.1') throw new Error('Interview lab must bind to 127.0.0.1.');
+const db=new DatabaseSync(':memory:'); db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
 db.exec(`
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'player');
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER REFERENCES users(id),expires INTEGER NOT NULL);
@@ -27,10 +27,20 @@ function audit(actor,action,detail){run('INSERT INTO audit(at,actor,action,detai
 function hash(password){const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(password,salt,64).toString('hex');}
 function matches(password,saved){const [salt,h]=saved.split(':');return timingSafeEqual(scryptSync(password,salt,64),Buffer.from(h,'hex'));}
 const tokenHash=t=>createHash('sha256').update(t).digest('hex');
-if(process.env.ADMIN_EMAIL&&process.env.ADMIN_PASSWORD){
- if(process.env.ADMIN_PASSWORD.length<12) throw new Error('ADMIN_PASSWORD must contain at least 12 characters.');
- if(!one('SELECT id FROM users WHERE role=?','admin')) run('INSERT INTO users(email,name,password,role) VALUES(?,?,?,?)',process.env.ADMIN_EMAIL.toLowerCase().trim(),'Commissioner',hash(process.env.ADMIN_PASSWORD),'admin');
+// Synthetic data only. Reset by restarting. No .env credentials or database are used.
+for(const [email,name,role] of [['commissioner@pool.test','Commissioner','admin'],['alice@pool.test','Alice','player'],['bob@pool.test','Bob','player']]) {
+ run('INSERT INTO users(email,name,password,role) VALUES(?,?,?,?)',email,name,hash('Interview-only-2026!'),role);
 }
+const stamp=(offset)=>new Date(Date.now()+offset).toISOString();
+for(const id of [1,2]) {
+ const cutoff=id===1?stamp(-3600000):stamp(86400000);
+ run('INSERT INTO weeks(id,label,lines_at,picks_at,ends_at,pot,locked_at,synced_at) VALUES(?,?,?,?,?,?,?,?)',id,id===1?'Interview · Closed week':'Interview · Open week',stamp(-86400000),cutoff,stamp(6*86400000),25000,stamp(-86400000),stamp(-86400000));
+ const names=[['Chiefs','Bills'],['49ers','Rams'],['Georgia','Texas'],['Oregon','Ohio State'],['Eagles','Cowboys'],['Alabama','LSU']];
+ for(let i=0;i<names.length;i++)run('INSERT INTO games(id,week_id,league,home,away,starts_at,home_spread,quoted_at,bookmaker) VALUES(?,?,?,?,?,?,?,?,?)','demo-'+i,id,i===2||i===3||i===5?'COLLEGE':'NFL',...names[i],stamp(3*86400000),[-3.5,2.5,-7,1.5,-2,3][i],stamp(-86400000),'synthetic-fixture');
+ run('INSERT INTO entries VALUES(?,?,?)',3,id,stamp(-1800000));
+ for(let i=0;i<5;i++)run('INSERT INTO picks VALUES(?,?,?,?)',3,id,'demo-'+i,'away');
+}
+
 function current(){return one('SELECT * FROM weeks ORDER BY id DESC LIMIT 1');}
 function games(w){return all('SELECT * FROM games WHERE week_id=? ORDER BY starts_at,league,home',w.id);}
 function freeze(){const w=current();if(w&&w.status==='open'&&!w.locked_at&&now()>=w.lines_at){
@@ -39,31 +49,15 @@ function freeze(){const w=current();if(w&&w.status==='open'&&!w.locked_at&&now()
  run('UPDATE weeks SET locked_at=? WHERE id=?',w.lines_at,w.id);audit(null,'lines_locked',{week:w.id,snapshot:w.synced_at});
  }
 }}
-let syncing=false;
-async function syncOdds(){
- if(syncing) throw new Error('A provider sync is already running.');
- const w=current();if(!w||w.status!=='open') throw new Error('Create an open pool week first.');
- if(now()>=w.lines_at) {freeze();throw new Error('The line deadline has passed; spreads cannot be changed.');}
- syncing=true;
- try{
- const incoming=await fetchSpreads();
- if(now()>=w.lines_at) throw new Error('Provider response arrived after the line deadline. No lines changed.');
- const eligible=incoming.filter(g=>g.startsAt>w.picks_at&&g.startsAt<w.ends_at&&Number.isFinite(Date.parse(g.quotedAt))&&Math.abs(Date.now()-Date.parse(g.quotedAt))<20*60000);
- if(!eligible.length) throw new Error('No eligible, recent spreads returned. Existing snapshot preserved.');
- transaction(()=>{
- run('DELETE FROM games WHERE week_id=?',w.id);
- for(const g of eligible) run('INSERT INTO games(id,week_id,league,home,away,starts_at,home_spread,quoted_at,bookmaker) VALUES(?,?,?,?,?,?,?,?,?,?)',g.id,w.id,g.league,g.home,g.away,g.startsAt,g.homeSpread,g.quotedAt,g.bookmaker);
- run('UPDATE weeks SET synced_at=? WHERE id=?',now(),w.id);audit(null,'odds_synced',{week:w.id,count:eligible.length});
- });return eligible.length;
- }finally{syncing=false;}
-}
-async function syncScores(){const w=current();if(!w||w.status==='settled')return 0;const rows=await fetchScores();transaction(()=>{for(const r of rows)run("UPDATE games SET home_score=?,away_score=?,status='final' WHERE id=? AND week_id=? AND status!='void'",r.home,r.away,r.id,w.id);audit(null,'scores_synced',{week:w.id,count:rows.length});});return rows.length;}
+const syncing=false;
+async function syncOdds(){throw new Error('Interview lab is offline; only synthetic spreads are used.');}
+async function syncScores(){throw new Error('Interview lab is offline; use synthetic results.');}
 function standings(w,reveal){if(!w)return [];return all('SELECT e.*,u.name FROM entries e JOIN users u ON e.user_id=u.id WHERE e.week_id=?',w.id).map(e=>{
  const ps=all('SELECT p.side,g.* FROM picks p JOIN games g ON p.game_id=g.id AND p.week_id=g.week_id WHERE p.user_id=? AND p.week_id=?',e.user_id,w.id);
  const result={win:0,loss:0,push:0,pending:0,void:0};for(const p of ps)result[gradePick(p,p.side)]++;
  return {userId:e.user_id,name:e.name,submittedAt:e.submitted_at,...(reveal?{...result,picks:ps.map(p=>({...p,result:gradePick(p,p.side)}))}:{}),award:one('SELECT cents FROM awards WHERE week_id=? AND user_id=?',w.id,e.user_id)?.cents||0};
  }).sort((a,b)=>(b.win||0)-(a.win||0)||a.name.localeCompare(b.name));}
-function state(user,weekId){freeze();const w=weekId?one('SELECT * FROM weeks WHERE id=?',weekId):current();const reveal=w&&now()>=w.picks_at;return {user:user?{id:user.id,name:user.name,role:user.role}:null,configured:!!one("SELECT id FROM users WHERE role='admin'"),providerConnected:!!process.env.ODDS_API_KEY,week:w||null,games:w?games(w):[],myPicks:w&&user?all('SELECT game_id AS gameId,side FROM picks WHERE user_id=? AND week_id=?',user.id,w.id):[],myEntry:w&&user?one('SELECT submitted_at FROM entries WHERE user_id=? AND week_id=?',user.id,w.id):null,standings:standings(w,reveal),players:one("SELECT count(*) AS n FROM users WHERE role='player'").n,weeks:all('SELECT id,label,status,pot,carry FROM weeks ORDER BY id DESC'),audit:user?.role==='admin'?all('SELECT * FROM audit ORDER BY id DESC LIMIT 20'):[]};}
+function state(user,weekId){freeze();const w=weekId?one('SELECT * FROM weeks WHERE id=?',weekId):current();const reveal=w&&now()>=w.picks_at;return {user:user?{id:user.id,name:user.name,role:user.role}:null,configured:!!one("SELECT id FROM users WHERE role='admin'"),providerConnected:false,week:w||null,games:w?games(w):[],myPicks:w&&user?all('SELECT game_id AS gameId,side FROM picks WHERE user_id=? AND week_id=?',user.id,w.id):[],myEntry:w&&user?one('SELECT submitted_at FROM entries WHERE user_id=? AND week_id=?',user.id,w.id):null,standings:standings(w,reveal),players:one("SELECT count(*) AS n FROM users WHERE role='player'").n,weeks:all('SELECT id,label,status,pot,carry FROM weeks ORDER BY id DESC'),audit:user?.role==='admin'?all('SELECT * FROM audit ORDER BY id DESC LIMIT 20'):[]};}
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));}
 const limits=new Map();
 function rate(req){const key=req.socket.remoteAddress;const time=Date.now();let v=limits.get(key);if(!v||v.until<time){v={n:0,until:time+15*60000};limits.set(key,v);}if(++v.n>30)throw new Error('Too many sign-in attempts. Try again in 15 minutes.');}
@@ -71,9 +65,41 @@ function userFor(req){const cookie=(req.headers.cookie||'').match(/(?:^|;\s*)poo
 async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>16000)throw new Error('Request too large.');}try{return JSON.parse(s||'{}');}catch{throw new Error('Invalid JSON.');}}
 function session(res,user){const token=randomBytes(32).toString('hex');run('INSERT INTO sessions VALUES(?,?,?)',tokenHash(token),user.id,Date.now()+7*86400000);res.setHeader('Set-Cookie',`pool_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${process.env.COOKIE_SECURE==='true'?'; Secure':''}`);}
 const server=http.createServer(async(req,res)=>{
- res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+ res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
  try{
  const url=new URL(req.url,'http://localhost'),route=url.pathname,user=userFor(req);
+ if(route.startsWith('/api/lab/')){
+ if(!user)return json(res,401,{error:'Sign in with a synthetic account first.'});
+ if(req.method==='GET'&&route==='/api/lab/search'){
+   // V1: SQL injection. Direct interpolation makes UNION read unrelated tables.
+   const query=url.searchParams.get('q')||'';
+   const rows=all("SELECT id,home,away FROM games WHERE week_id=2 AND home LIKE '%"+query+"%'");
+   return json(res,200,{rows});
+ }
+ if(req.method==='GET'&&route==='/api/lab/entry'){
+   // V3: IDOR. Authentication exists, but target ownership and sealing are not checked.
+   const owner=Number(url.searchParams.get('userId')),week=Number(url.searchParams.get('week')||2);
+   return json(res,200,{picks:all('SELECT * FROM picks WHERE user_id=? AND week_id=?',owner,week)});
+ }
+ if(req.method!=='POST')return json(res,404,{error:'Lab endpoint not found.'});
+ if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Invalid request origin.'});
+ if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'Use application/json.'});
+ const input=await body(req);
+ if(route==='/api/lab/profile'){
+   // V2: Mass assignment. The client can change a privilege-bearing role.
+   const profile={name:user.name,role:user.role,...input};
+   if(typeof profile.name!=='string'||profile.name.length>500||!['player','admin'].includes(profile.role))throw new Error('Invalid synthetic profile.');
+   run('UPDATE users SET name=?,role=? WHERE id=?',profile.name,profile.role,user.id);
+   return json(res,200,{profile:{name:profile.name,role:profile.role}});
+ }
+ if(route==='/api/lab/payout'){
+   // V6: Financial integrity. A player supplies their award, with no settlement authorization.
+   if(!Number.isInteger(input.amountCents)||input.amountCents<0||input.amountCents>1000000)throw new Error('Use a synthetic amount from 0 to 1000000 cents.');
+   run('INSERT INTO awards(week_id,user_id,cents) VALUES(1,?,?) ON CONFLICT(week_id,user_id) DO UPDATE SET cents=excluded.cents',user.id,input.amountCents);
+   return json(res,200,{recordedCents:input.amountCents,potCents:25000,realMoneyTransferred:false});
+ }
+ return json(res,404,{error:'Lab endpoint not found.'});
+ }
  if(route.startsWith('/api/')){
  if(req.method==='GET'&&route==='/api/state')return json(res,200,state(user,Number(url.searchParams.get('week'))||null));
  if(req.method!=='POST')return json(res,404,{error:'Endpoint not found.'});
@@ -94,7 +120,8 @@ const server=http.createServer(async(req,res)=>{
  if(route==='/api/logout'){const c=(req.headers.cookie||'').match(/pool_session=([a-f0-9]{64})/);if(c)run('DELETE FROM sessions WHERE token=?',tokenHash(c[1]));res.setHeader('Set-Cookie','pool_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return json(res,200,{ok:true});}
  if(route==='/api/picks'){
  if(user.role!=='player')throw new Error('The commissioner account manages the pool. Join with a separate player account to enter.');
- const w=current();if(!w||w.status!=='open'||!w.locked_at||now()>=w.picks_at)throw new Error('Picks are not open. Submit after lines lock and before Thursday 11:59 PM Pacific.');
+ // V5: The browser checks the deadline, but the server omits it and accepts a week ID.
+ const w=b.weekId?one('SELECT * FROM weeks WHERE id=?',Number(b.weekId)):current();if(!w||w.status!=='open'||!w.locked_at)throw new Error('Picks are not open. Submit after lines lock and before Thursday 11:59 PM Pacific.');
  validSelections(b.picks,games(w),w.picks_at);
  transaction(()=>{run('INSERT INTO entries VALUES(?,?,?) ON CONFLICT(user_id,week_id) DO UPDATE SET submitted_at=excluded.submitted_at',user.id,w.id,now());run('DELETE FROM picks WHERE user_id=? AND week_id=?',user.id,w.id);for(const p of b.picks)run('INSERT INTO picks VALUES(?,?,?,?)',user.id,w.id,p.gameId,p.side);audit(user.id,'picks_submitted',{week:w.id,picks:b.picks});});return json(res,200,state(user));
  }
@@ -129,11 +156,12 @@ const server=http.createServer(async(req,res)=>{
  return json(res,200,state(user));
  }
  if(req.method!=='GET')return json(res,405,{error:'Method not allowed.'});
- const files={'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
+ const files={'/interview':['lab.html','text/html'],'/lab.js':['lab.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
  const file=files[route];if(!file){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':file[1]+'; charset=utf-8'});res.end(readFileSync(join(root,'public',file[0])));
  }catch(e){const expected=!/SQLITE|constraint|database/i.test(e.message);if(!expected)console.error('Database operation failed');json(res,400,{error:expected?e.message:'Unable to save this change. Try again.'});}
 });
 let tick=0;
 const interval=setInterval(async()=>{freeze();if(++tick%15!==0)return;const w=current();try{if(w?.status==='open'){if(now()<w.lines_at)await syncOdds();else await syncScores();}}catch(e){console.error('Scheduled provider sync:',e.message);}run('DELETE FROM sessions WHERE expires<?',Date.now());for(const [k,v]of limits)if(v.until<Date.now())limits.delete(k);},60000);
 interval.unref();
-server.listen(Number(process.env.PORT)||3000,process.env.HOST||'127.0.0.1',()=>console.log(`Five Wide listening on port ${Number(process.env.PORT)||3000}`));
+export { server };
+if(process.env.INTERVIEW_TEST_NO_LISTEN!=='true') server.listen(Number(process.env.PORT)||3000,'127.0.0.1',()=>console.log(`Five Wide listening on port ${Number(process.env.PORT)||3000}`));
