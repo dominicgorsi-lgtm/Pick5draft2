@@ -44,7 +44,7 @@ The server checks deadlines every minute and syncs every 15 minutes: spreads bef
 
 The latest fresh successful snapshot is frozen at Wednesday’s cutoff. No new quotes are accepted after cutoff. Snapshots older than 20 minutes block picks. Failed or late provider responses preserve the prior snapshot. With no valid snapshot, the commissioner can cancel the unplayable week after cutoff and carry the full pot forward. Picks are never reopened after a deadline.
 
-**Live access is unverified:** no API key is configured. No fabricated odds or standings are displayed.
+**Live access is unverified:** no API key is configured in the workspace. The normal pool uses provider data; the clearly labeled hosted presentation uses simulated fixtures.
 
 ## Hosting
 
@@ -52,7 +52,13 @@ Run as a **Node service with a persistent disk**, with one process against the S
 
 Keep `.env`, SQLite data, backups, invite codes, and keys out of Git. Back up via SQLite’s online backup tooling or stop the service before copying all database files. Login and registration are rate-limited by directly connected IP; behind a reverse proxy this may be shared by players. No email verification, self-service password recovery, payment processing, or SSO is included.
 
-No hosted deployment was created. Sites helper and browser preview tooling are unavailable in this environment. Browser visual QA remains unverified.
+Render deployment status and browser visual QA have not been verified from this workspace.
+
+## Hosted presentation
+
+After deployment, open `/demo/presentation` for the console, `/demo/slides` for the slide deck, or `/demo/` for the simulated pool. The home page links to the presentation. Sign in there as `presenter@pool.test` with sample password `Interview-only-2026!`. These credentials apply only to demo accounts.
+
+See [HOSTED-DEMO.md](HOSTED-DEMO.md) for the demo roster, reset behavior and distinction between illustrative examples and actual guarded responses.
 
 ## Render deployment
 

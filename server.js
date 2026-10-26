@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { server as demoServer } from './demo/server.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -73,6 +74,14 @@ function session(res,user){const token=randomBytes(32).toString('hex');run('INSE
 const server=http.createServer(async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
  try{
+ const originalUrl=new URL(req.url,'http://localhost');
+ if(['/presentation','/slides','/demo'].includes(originalUrl.pathname)){
+  const destination=originalUrl.pathname==='/demo'?'/demo/':'/demo'+originalUrl.pathname;
+  res.writeHead(302,{Location:destination+originalUrl.search});return res.end();
+ }
+ if(originalUrl.pathname.startsWith('/demo/')){
+  req.url=req.url.slice('/demo'.length);return demoServer.emit('request',req,res);
+ }
  const url=new URL(req.url,'http://localhost'),route=url.pathname,user=userFor(req);
  if(route.startsWith('/api/')){
  if(req.method==='GET'&&route==='/api/state')return json(res,200,state(user,Number(url.searchParams.get('week'))||null));
@@ -136,4 +145,5 @@ const server=http.createServer(async(req,res)=>{
 let tick=0;
 const interval=setInterval(async()=>{freeze();if(++tick%15!==0)return;const w=current();try{if(w?.status==='open'){if(now()<w.lines_at)await syncOdds();else await syncScores();}}catch(e){console.error('Scheduled provider sync:',e.message);}run('DELETE FROM sessions WHERE expires<?',Date.now());for(const [k,v]of limits)if(v.until<Date.now())limits.delete(k);},60000);
 interval.unref();
-server.listen(Number(process.env.PORT)||3000,process.env.HOST||'127.0.0.1',()=>console.log(`Five Wide listening on port ${Number(process.env.PORT)||3000}`));
+export { server };
+if(process.argv[1]===fileURLToPath(import.meta.url)) server.listen(Number(process.env.PORT)||3000,process.env.HOST||'127.0.0.1',()=>console.log(`Five Wide listening on port ${Number(process.env.PORT)||3000}`));

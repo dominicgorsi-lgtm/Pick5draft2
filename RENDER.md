@@ -25,3 +25,7 @@ Deploy `main`. The `interview-vulnerabilities` branch is a separate localhost-on
 ## Verification boundary
 
 The missing Dockerfile and configuration have been corrected in source. The Docker daemon socket is blocked by this workspace's sandbox, so the image build and Render deployment have not been executed here. Confirm the new deployment in Render; the prior failed deployment remains a historical result.
+
+## Hosted presentation links
+
+Deploy the latest `main` commit to add `/demo/presentation`, `/demo/slides`, and `/demo/` on your existing service. No new environment variables are needed for demo accounts. The simulated pool uses separate in-memory records and a separate cookie. See [HOSTED-DEMO.md](HOSTED-DEMO.md). With Render auto-deploy enabled, pushing `main` starts a deploy; otherwise choose Manual Deploy → Deploy latest commit. The GitHub update does not verify that Render has deployed successfully.

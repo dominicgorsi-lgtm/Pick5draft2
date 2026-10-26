@@ -5,6 +5,7 @@ WORKDIR /app
 # This app uses only Node's built-in modules; there is no install/build step.
 COPY package.json server.js rules.js odds.js ./
 COPY public ./public
+COPY demo ./demo
 
 RUN mkdir -p /var/data
 
