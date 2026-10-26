@@ -1,4 +1,6 @@
 let state,tab='picks',filter='ALL',draft=[],register=false,selectedWeek=null,dirty=false;
+const presentationQuery=new URLSearchParams(globalThis.location?.search||'');
+if(presentationQuery.get('view')==='standings'){tab='standings';selectedWeek=Number(presentationQuery.get('week'))||null;}
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=c=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:c%100?2:0}).format(c/100);
 const date=(v,short=false)=>new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',weekday:'short',month:'short',day:'numeric',...(short?{}:{hour:'numeric',minute:'2-digit'})}).format(new Date(v));
@@ -47,4 +49,10 @@ document.addEventListener('submit',async e=>{const f=e.target;if(f.id!=='weekFor
 document.addEventListener('change',async e=>{if(e.target.id==='weekSelect'){selectedWeek=Number(e.target.value);await refresh();}});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 setInterval(async()=>{if(dirty||$('#auth').open||document.activeElement?.matches('input,select'))return;try{accept(await api('state'+(selectedWeek?'?week='+selectedWeek:'')));}catch{}},60000);
+// Visible, harmless confirmation for the stored-XSS presentation payload.
+setInterval(()=>{
+ if(document.body.dataset.interviewXss==='executed'&&!document.querySelector('#interviewXssProof')){
+  const proof=document.createElement('div');proof.id='interviewXssProof';proof.className='notice lab-banner success-marker';proof.textContent='STORED XSS EXECUTED in this browser · Synthetic demonstration · No data was sent anywhere.';document.body.prepend(proof);
+ }
+},500);
 refresh();

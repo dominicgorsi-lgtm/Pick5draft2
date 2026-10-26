@@ -6,15 +6,18 @@ This branch (`interview-vulnerabilities`) is a local training version of the foo
 npm run interview
 ```
 
-Open **http://127.0.0.1:3001/interview** for exercise controls, or `/` for the football app. Use Node 24+. No dependencies are needed. All three fixture users have password `Interview-only-2026!`:
+Open **http://127.0.0.1:3001/presentation** for the guided console, `/slides` for the nine-slide deck, or `/` for the football app. See [PRESENTATION.md](PRESENTATION.md) for the run of show. Use Node 24+. No dependencies are needed. All fixture users have password `Interview-only-2026!`:
 
 | User | ID | Role |
 |---|---|---|
 | commissioner@pool.test | 1 | admin |
 | alice@pool.test | 2 | player |
 | bob@pool.test | 3 | player |
+| presenter@pool.test | 4 | admin |
+| maya@pool.test | 5 | player |
+| guest@pool.test | 27 | player |
 
-Week 1 closed an hour before startup. Week 2 closes a day after startup. Each has six synthetic games and Bob’s five away picks. The listed pot is $250. The lab neither connects a real odds feed nor transfers money.
+There are 25 player accounts and two administrators. Week 1 is a settled $250 rollover; week 2 is the last completed $500 week with Bob and Maya each winning $250. Week 3 is an expired training week; week 4 is the open training week. Bob’s five current away picks remain sealed. Training deadlines are relative to server startup. All games and results are simulated; the lab neither connects a real odds feed nor transfers money.
 
 ## Suggested remediation order
 
@@ -73,11 +76,11 @@ Refresh the pool app: the Commissioner tab appears, and the account can call com
 
 ### V3 — Insecure direct object reference (CWE-639)
 
-While signed in as Alice, request player ID **3**, week **2** in Sealed entry lookup. The response includes Bob’s five picks before the deadline. The normal `/api/state` still seals entries: the alternate lookup bypasses that protection.
+While signed in as Alice, request player ID **3**, week **4** in Sealed entry lookup. The response includes Bob’s five picks before the deadline. The normal `/api/state` still seals entries: the alternate lookup bypasses that protection.
 
 ### V4 — Stored cross-site scripting (CWE-79)
 
-While Alice is still a player, submit five picks for week **2** using Deadline enforcement. Save this profile:
+While Alice is still a player, submit five picks for week **4** using Deadline enforcement. Save this profile:
 
 ```json
 {"name":"<img src=x onerror=\"document.body.dataset.interviewXss='executed'\">"}
@@ -87,14 +90,14 @@ Visit the pool app and select Standings. Check `document.body.dataset.interviewX
 
 ### V5 — Deadline bypass (CWE-602)
 
-As Alice, use Deadline enforcement to submit five picks for week **1**. The server accepts the entry even though the week’s deadline passed an hour before startup. In the pool app, select the closed week in Standings to see the new entry. The frontend still disables the pick controls for that week.
+As Alice, use Deadline enforcement to submit five picks for week **3**. The server accepts the entry even though the week’s deadline passed an hour before startup. In the pool app, select the closed week in Standings to see the new entry. The frontend still disables the pick controls for that week.
 
 ### V6 — Payout tampering (CWE-840)
 
-As Alice, use Payout integrity to submit **99999** cents. A **$999.99** award is stored against a **$250** pot. Week 1’s standings show the award after Alice has a submitted entry. No real money is moved. The endpoint trusts a client amount rather than authorizing settlement and calculating the award.
+As Alice, use Payout integrity to submit **99999** cents. A **$999.99** award is stored against a **$500** pot. Week 2’s standings show the award alongside the two legitimate $250 awards, so recorded awards total $1,499.99. Alice already has a historical entry. No real money is moved. The endpoint trusts a client amount rather than authorizing settlement and calculating the award.
 
 ## Verification and limitations
 
-`npm test` runs rule tests and an isolated lab integration test. It verifies five server-side reproductions, stored XSS data flow into unescaped leaderboard HTML, and lab startup containment. Browser JavaScript execution has not been manually verified in this environment. The original production-server integration test belongs to `main`; it is replaced on this branch by tests that deliberately expect the six weaknesses to exist.
+`npm test` runs rule tests and an isolated lab integration test. It verifies five server-side reproductions, stored XSS data flow into unescaped leaderboard HTML, lab startup containment, the 25-player roster, historical grading and split awards, guarded comparisons, and presenter-authorized reset. Browser JavaScript execution has not been manually verified in this environment. The original production-server integration test belongs to `main`; it is replaced on this branch by tests that deliberately expect the six weaknesses to exist.
 
 The lab’s loopback bind is a development guard, not a defense if someone publishes or forwards the service. Keep it local. The example credentials and injected code are confined to synthetic fixtures.
