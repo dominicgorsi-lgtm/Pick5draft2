@@ -1,0 +1,32 @@
+# Optional Blueprint for a NEW service. Existing services use their dashboard settings.
+# Persistent disks require a paid Render instance.
+services:
+  - type: web
+    name: five-wide-pool
+    runtime: docker
+    branch: main
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    disk:
+      name: pool-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_PATH
+        value: /var/data/pool.sqlite
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: POOL_INVITE_CODE
+        generateValue: true
+      - key: ODDS_API_KEY
+        sync: false
+      - key: ODDS_BOOKMAKER
+        value: draftkings

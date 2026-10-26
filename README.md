@@ -54,6 +54,10 @@ Keep `.env`, SQLite data, backups, invite codes, and keys out of Git. Back up vi
 
 No hosted deployment was created. Sites helper and browser preview tooling are unavailable in this environment. Browser visual QA remains unverified.
 
+## Render deployment
+
+See [RENDER.md](RENDER.md) for the existing Docker-service fix, required environment settings, and persistent storage setup. The root Dockerfile runs the normal app on Node 24; `render.yaml` is an optional Blueprint for a new service.
+
 ## Verify
 
 ```sh
