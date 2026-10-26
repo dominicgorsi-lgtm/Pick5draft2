@@ -54,11 +54,9 @@ Keep `.env`, SQLite data, backups, invite codes, and keys out of Git. Back up vi
 
 Render deployment status and browser visual QA have not been verified from this workspace.
 
-## Hosted presentation
+## Hosted ownership exercise
 
-After deployment, open `/demo/presentation` for the console, `/demo/slides` for the slide deck, or `/demo/` for the simulated pool. The home page links to the presentation. Sign in there as `presenter@pool.test` with sample password `Interview-only-2026!`. These credentials apply only to demo accounts.
-
-See [HOSTED-DEMO.md](HOSTED-DEMO.md) for the demo roster, reset behavior and distinction between illustrative examples and actual guarded responses.
+Open `/demo/exercise` or `/demo/presentation` after deployment. Sign in as Alice using the on-screen button, open Bob's card, change a pick and save. Then sign in as Bob to verify the real change. This is one intentional ownership bug in simulated data. [HOSTED-DEMO.md](HOSTED-DEMO.md) gives the demonstrate → patch → deploy → retest flow.
 
 ## Render deployment
 

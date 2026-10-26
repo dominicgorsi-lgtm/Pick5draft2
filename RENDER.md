@@ -29,3 +29,5 @@ The missing Dockerfile and configuration have been corrected in source. The Dock
 ## Hosted presentation links
 
 Deploy the latest `main` commit to add `/demo/presentation`, `/demo/slides`, and `/demo/` on your existing service. No new environment variables are needed for demo accounts. The simulated pool uses separate in-memory records and a separate cookie. See [HOSTED-DEMO.md](HOSTED-DEMO.md). With Render auto-deploy enabled, pushing `main` starts a deploy; otherwise choose Manual Deploy → Deploy latest commit. The GitHub update does not verify that Render has deployed successfully.
+
+The current primary demo is `/demo/exercise` (also `/demo/presentation`): a single intentional entry-ownership bug in synthetic data. See HOSTED-DEMO.md for the patch-and-retest exercise. The normal pool remains separate.

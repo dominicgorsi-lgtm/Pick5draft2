@@ -1,53 +1,51 @@
-# Hosted Five Wide presentation
+# One real bug, one fix, one retest
 
-This version ships on `main` with the existing Render Docker setup. After Render deploys the latest commit, use your existing website URL with these paths:
+The hosted demo now opens a normal player-card screen with one deliberate broken ownership check. It uses simulated accounts and its own in-memory database. The normal pool at the website root has separate records and sessions.
 
-- `/demo/presentation` — actor switching, case studies and response comparisons.
-- `/demo/slides` — nine slides with speaker notes (press N).
-- `/demo/` — the simulated football pool and player pick board.
+## Open and show the bug
 
-`/presentation` and `/slides` redirect to their demo equivalents. The home page links to the console.
+After Render deploys the latest main commit, open `/demo/exercise` or `/demo/presentation` on your website. The home page links to it.
 
-## Demo login
+1. Click **Sign in as Alice**. The screen shows Alice, role player, account 2.
+2. Click **Bob’s card · ID 3**. Alice stays signed in, but Bob’s five away picks load.
+3. Change the first game from the away team to the home team. Click **Save Bob’s picks**.
+4. The response shows actor Alice (player) and owner Bob. This is an actual write to the synthetic database, not an illustrative response.
+5. Click **Sign in as Bob** and confirm his first pick changed.
 
-**Presenter:** `presenter@pool.test`  
-**Sample password:** `Interview-only-2026!`
+Alice and Bob use `alice@pool.test` and `bob@pool.test`, with sample password `Interview-only-2026!`. Neither is commissioner. You can also see the target ID in the address `/demo/exercise?player=3`.
 
-These credentials belong to the simulated pool only. They do not sign into the normal pool at the website root. Use the console's actor buttons or roster to switch to Alice, Bob, Maya or Guest. Every fixture account uses the same sample password.
+## Explain the issue
 
-The demo includes 25 player accounts, two administrators, a prior $250 rollover, and a completed $500 week split equally between Bob and Maya. Alice and Guest start without current entries so you can demonstrate normal picks. All teams, spreads, scores, identities and awards are fictional.
+The server authenticates the caller but does not verify that the requested entry belongs to them. This is broken object-level authorization, commonly called IDOR. One missing ownership rule permits both the unintended read and the unintended write.
 
-## Honest comparisons
+The affected route is `GET/POST /demo/api/entries/:playerId`, implemented in `demo/server.js`. It validates a session, a player role, five valid picks, and an open deadline. The intentional omission is the comparison between the authenticated user's ID and the requested owner's ID.
 
-The hosted presentation shows **illustrative vulnerable outcomes** beside **actual guarded responses**. It does not execute the six intentional vulnerabilities:
+## Ask Codex to fix it
 
-- Search values are parameterized.
-- Players cannot assign themselves an administrator role.
-- Other players' current entries remain sealed.
-- Player names render as text under a CSP that blocks inline handlers.
-- The server rejects expired-week submissions.
-- Players cannot choose their award amounts.
+Use this prompt during your presentation:
 
-The left pane is explicitly labeled as an educational example. The right pane displays the actual response from a request to the hosted site. The comparison report download preserves that distinction. A stored HTML example is inert here; do not claim that the hosted site executed XSS.
+> Fix the pick-ownership bug in the hosted demo. Alice must not be able to read or modify Bob's entry through GET or POST /demo/api/entries/:playerId. Enforce ownership on the server before reading or writing. Add regression tests that expect 403 and verify Bob's picks do not change, while Alice can still edit her own card. Push the fix to main for Render deployment.
 
-For executable vulnerable cases, use the separate `interview-vulnerabilities` branch locally as described in its `PRESENTATION.md`. Its console, slides and fixtures remain available for laptop rehearsals.
+Do not fix it by hiding the Bob button. The direct API request must be denied.
 
-## Data and sessions
+## Deploy and retest
 
-The hosted demo has its own in-memory SQLite database and a `demo_pool_session` cookie scoped to `/demo`. It neither seeds the normal database nor uses the normal account session. Demo presenter permissions apply only to simulated records. Demo provider calls are disabled; no Odds API key is needed.
+1. Wait for the patched commit to be Live in Render. Use Deploy latest commit if auto-deploy is off.
+2. Keep the exercise tab open across deployment; the last save body is stored in that tab's session storage.
+3. Sign in as Alice again because redeploy resets demo sessions and data.
+4. Click Bob's card. It should return 403.
+5. Click **Repeat last save request**. The same cross-player POST should return 403.
+6. Sign in as Bob and verify his original away picks are unchanged.
+7. Sign in as Alice, open My card, and save her own five picks. That should still work.
 
-All visitors share the same demo state. Use a second browser profile or private window for another simultaneous actor. Every tab in one browser profile shares its demo login.
+The test proves both that the unauthorized action is blocked and that normal use continues to work.
 
-Switch to the original presenter account and choose Reset rehearsal data to restore the fixture records. Reset signs other demo sessions out. Restarting or redeploying the service also resets the demo. Normal pool records and sessions are separate and are not reset by the presentation console.
+## Reset and scope
 
-## Render deployment
+Reset simulated pool restores fixture picks and signs demo users out, then signs Alice in. It clears the saved replay request, so do not reset between capturing your request and retesting the deployed patch. A server restart resets demo data but not the saved request in an open browser tab.
 
-No additional environment variables are required for the hosted presentation. The existing Dockerfile copies the `demo` directory. Pushes to `main` trigger deployment only if Render auto-deploy is enabled. Otherwise select Manual Deploy → Deploy latest commit in Render. Deployment success must be confirmed in Render; it is not established by a GitHub push.
+The intentionally flawed route can only reach the synthetic database under `/demo`; it does not use normal pool sessions, records, or provider keys. All names, scores and awards are simulated. The older six-case comparisons are no longer the main presentation route.
 
 ## Verification
 
-```sh
-node --test test/rules.test.js test/hosted-demo.test.js
-```
-
-The tests verify route availability, fixture totals, all six guarded behaviors, inert name rendering, cookie and database separation, and preservation of a normal pool week and administrator session across demo reset. Browser layout and the actual Render deployment remain unverified in the workspace.
+`node --test test/rules.test.js test/hosted-demo.test.js` currently checks that Alice really can change Bob's picks in the intentionally vulnerable baseline, that Bob observes the change, that invalid cards are still rejected, and that normal pool records are separate. When implementing the patch, replace the vulnerability reproduction assertions with denial and no-mutation regression tests. The current test is a demonstration baseline, not a claim that the ownership boundary is secure.

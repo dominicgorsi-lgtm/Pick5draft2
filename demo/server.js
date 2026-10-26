@@ -8,7 +8,8 @@ import { weekDeadlines, gradePick, validSelections, payout } from '../rules.js';
 import { ACCOUNTS, WEEK, seedFixtures } from './fixtures.js';
 const root=dirname(fileURLToPath(import.meta.url));
 // Hosted presentation uses its own in-memory data and session cookie.
-// Deliberately vulnerable exercise routes are replaced with guarded behavior.
+// One deliberate ownership omission is confined to /api/entries/:playerId.
+// Other exercise routes retain their guarded behavior.
 const db=new DatabaseSync(':memory:'); db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
 db.exec(`
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'player');
@@ -57,6 +58,30 @@ const server=http.createServer(async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
  try{
  const url=new URL(req.url,'http://localhost'),route=url.pathname,user=userFor(req);
+ const entryRoute=route.match(/^\/api\/entries\/(\d+)$/);
+ if(entryRoute){
+  if(!user)return json(res,401,{error:'Sign in to edit your card.'});
+  if(user.role!=='player')return json(res,403,{error:'Use a player account for this exercise.'});
+  const owner=one("SELECT id,name FROM users WHERE id=? AND role='player'",Number(entryRoute[1]));
+  if(!owner)return json(res,404,{error:'Player not found.'});
+  // INTENTIONAL INTERVIEW BUG: authentication exists, but ownership is not checked.
+  // The repair belongs here, before either the read or write can reach another card.
+  const w=current();
+  const entry=()=>({actor:{id:user.id,name:user.name,role:user.role},owner,week:{id:w.id,label:w.label,picksAt:w.picks_at},games:games(w),picks:all('SELECT game_id AS gameId,side FROM picks WHERE user_id=? AND week_id=?',owner.id,w.id)});
+  if(req.method==='GET')return json(res,200,entry());
+  if(req.method!=='POST')return json(res,405,{error:'Use GET or POST.'});
+  if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Invalid request origin.'});
+  if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'Use application/json.'});
+  if(!w||w.status!=='open'||!w.locked_at||now()>=w.picks_at)return json(res,403,{error:'Picks are closed. Reset the demo to start a new rehearsal.'});
+  const input=await body(req);validSelections(input.picks,games(w),w.picks_at);
+  transaction(()=>{
+   run('INSERT INTO entries VALUES(?,?,?) ON CONFLICT(user_id,week_id) DO UPDATE SET submitted_at=excluded.submitted_at',owner.id,w.id,now());
+   run('DELETE FROM picks WHERE user_id=? AND week_id=?',owner.id,w.id);
+   for(const p of input.picks)run('INSERT INTO picks VALUES(?,?,?,?)',owner.id,w.id,p.gameId,p.side);
+   audit(user.id,'entry_saved',{actorId:user.id,targetId:owner.id,weekId:w.id,picks:input.picks});
+  });
+  return json(res,200,{saved:true,...entry()});
+ }
  if(route.startsWith('/api/lab/')){
  if(req.method==='GET'&&route==='/api/lab/scenario'){
   const past=one('SELECT * FROM weeks WHERE id=?',WEEK.completed);
@@ -169,7 +194,7 @@ const server=http.createServer(async(req,res)=>{
  return json(res,200,state(user));
  }
  if(req.method!=='GET')return json(res,405,{error:'Method not allowed.'});
- const files={'/slides':['slides.html','text/html'],'/slides.js':['slides.js','text/javascript'],'/presentation':['lab.html','text/html'],'/interview':['lab.html','text/html'],'/lab.js':['lab.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
+ const files={'/slides':['slides.html','text/html'],'/slides.js':['slides.js','text/javascript'],'/presentation':['ownership.html','text/html'],'/exercise':['ownership.html','text/html'],'/ownership.js':['ownership.js','text/javascript'],'/advanced':['lab.html','text/html'],'/interview':['lab.html','text/html'],'/lab.js':['lab.js','text/javascript'],'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};
  const file=files[route];if(!file){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':file[1]+'; charset=utf-8'});res.end(readFileSync(join(root,'public',file[0])));
  }catch(e){const expected=!/SQLITE|constraint|database/i.test(e.message);if(!expected)console.error('Database operation failed');json(res,400,{error:expected?e.message:'Unable to save this change. Try again.'});}
 });

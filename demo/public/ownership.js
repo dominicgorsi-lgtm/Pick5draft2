@@ -1,0 +1,24 @@
+const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let user=null,card=null,draft=[],busy=false;
+const savedKey='five-wide-last-entry-request';
+const message=text=>$('#status').textContent=text;
+function remembered(){try{return JSON.parse(sessionStorage.getItem(savedKey)||'null');}catch{return null;}}
+function updateReplay(){$('#replay').disabled=busy||!remembered();}
+async function api(path,body){const response=await fetch('/demo/api/'+path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();return {status:response.status,data};}
+function evidence(path,body,result){$('#evidence').textContent=JSON.stringify({request:{method:body===undefined?'GET':'POST',path:'/demo/api/'+path,...(body?{body}:{})},...result},null,2);}
+async function identity(){const r=await api('state');user=r.data.user;$('#identity').textContent=user?`${user.name} · ${user.role} · account ${user.id}`:'Not signed in';$('#myCard').disabled=!user;}
+async function openCard(id){card=null;draft=[];$('#editor').hidden=true;const path='entries/'+id,r=await api(path);evidence(path,undefined,r);if(r.status!==200){message(`${r.status}: ${r.data.error}`);return;}card=r.data;draft=card.picks.map(p=>({...p}));history.replaceState(null,'','/demo/exercise?player='+id);render();message(`Signed in as ${user.name} (${user.role}). Viewing ${card.owner.name}’s card.`);}
+const spread=n=>n===0?'PK':(n>0?'+':'')+n;
+function render(){if(!card)return;$('#editor').hidden=false;$('#owner').textContent=`${card.owner.name}’s picks · player ${card.owner.id}`;$('#deadline').textContent='Picks close '+new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(card.week.picksAt))+' Pacific';$('#count').textContent=draft.length+' / 5';$('#games').innerHTML=card.games.map(g=>{const p=draft.find(p=>p.gameId===g.id);return `<article class="game"><div class="gamehead"><strong>${g.league}</strong><span>${esc(g.away)} at ${esc(g.home)}</span></div><div class="matchup">${['away','home'].map((side,i)=>`${i?'<span class="versus">AT</span>':''}<button class="team ${p?.side===side?'selected':''}" data-game="${esc(g.id)}" data-side="${side}" aria-pressed="${p?.side===side}"><span class="teamname">${esc(g[side])}</span><span class="spread">${spread(side==='home'?g.home_spread:-g.home_spread)}</span></button>`).join('')}</div></article>`;}).join('');$('#save').textContent='Save '+card.owner.name+'’s picks';$('#save').disabled=busy||draft.length!==5;}
+async function login(name){const r=await api('login',{email:name+'@pool.test',password:'Interview-only-2026!'});if(r.status!==200)throw new Error(r.data.error);await identity();await openCard(user.id);}
+async function save(path,body,remember=true){if(remember){try{sessionStorage.setItem(savedKey,JSON.stringify({path,body}));}catch{}}const r=await api(path,body);evidence(path,body,r);if(r.status!==200){message(`${r.status}: ${r.data.error}`);return;}card=r.data;draft=card.picks.map(p=>({...p}));render();message(`Saved ${card.owner.name}’s card. Request made by ${r.data.actor.name} (${r.data.actor.role}). Sign in as the card owner to verify.`);}
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||b.disabled||busy)return;busy=true;updateReplay();try{
+if(b.dataset.login)await login(b.dataset.login);
+if(b.dataset.owner)await openCard(Number(b.dataset.owner));
+if(b.id==='myCard')await openCard(user.id);
+if(b.dataset.game){const i=draft.findIndex(p=>p.gameId===b.dataset.game);if(i>=0){if(draft[i].side===b.dataset.side)draft.splice(i,1);else draft[i].side=b.dataset.side;}else if(draft.length<5)draft.push({gameId:b.dataset.game,side:b.dataset.side});else message('Remove a pick before adding a sixth game.');render();}
+if(b.id==='save')await save('entries/'+card.owner.id,{picks:draft});
+if(b.id==='replay'){const previous=remembered();if(previous)await save(previous.path,previous.body,false);}
+if(b.id==='reset'){if(!confirm('Restore all simulated cards and sign demo players out?'))return;const auth=await api('login',{email:'presenter@pool.test',password:'Interview-only-2026!'});if(auth.status!==200)throw new Error(auth.data.error);const reset=await api('lab/reset',{});if(reset.status!==200)throw new Error(reset.data.error);sessionStorage.removeItem(savedKey);await login('alice');message('Demo restored. Alice is signed in. Bob’s five picks are back to away teams.');}
+}catch(err){message(err.message);}finally{busy=false;render();updateReplay();}});
+(async()=>{try{await identity();updateReplay();if(user?.role==='player')await openCard(Number(new URLSearchParams(location.search).get('player'))||user.id);}catch(e){message(e.message);}})();
