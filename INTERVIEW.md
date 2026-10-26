@@ -29,6 +29,24 @@ Priorities express the impact if these flaws existed in a deployed pool. They ar
 | 5 | V3: IDOR exposing sealed picks | P1 / High | A player reads a competitor’s card before the deadline. | Check ownership and release time on every entry read, including alternate endpoints. |
 | 6 | V5: Client-only deadline enforcement | P1 / High | A player submits picks to a closed week by sending an API request directly. | Validate the selected week, lock state, and deadline on the server at write time. |
 
+## Why this order
+
+The ordering assumes an internet-hosted pool with the existing invite-only registration, ordinary player accounts, and commissioner-managed payments. All six exercise endpoints require a signed-in account. Priorities reflect business impact, scope of access, ease of exploitation, and whether another user must take an action. They describe the hypothetical deployed flaws; this local lab uses synthetic data and cannot move money.
+
+1. **V2 — Role mass assignment: broadest control, immediate exploitation.** An ordinary player can become commissioner with one profile request and no victim interaction. That role authorizes operations across the pool, including recording results and settling weeks. Its scope is broader than changing one award, so it ranks first. The rating concerns application administrator privileges, not server or operating-system access.
+
+2. **V6 — Payout tampering: direct damage to the money ledger.** A player can record an award exceeding the pot without a winning entry or commissioner approval. This immediately breaks a core accounting rule and could cause an incorrect payment if the commissioner trusts the ledger. It ranks just below role escalation because it controls a narrower operation. The app records awards; it does not automatically transfer funds.
+
+3. **V1 — SQL injection: broad disclosure through one request.** A player can turn game search into queries against unrelated tables. The reproduction shows account emails and roles; other readable tables can expose password hashes, sealed picks, and payout records. This is broader than reading one entry and requires no victim action. It ranks below the first two because the demonstrated SELECT injection establishes database reads, not arbitrary writes, command execution, or administrator access. Confirming stronger capabilities would raise its priority.
+
+4. **V4 — Stored XSS: potentially privileged actions, with a viewer dependency.** The stored name reaches other users' browsers when they view Standings. Injected same-origin JavaScript could read data and make requests using that viewer's existing session, including commissioner requests if the commissioner views the payload. HttpOnly cookies do not prevent such requests. It ranks below SQL injection because someone must render the affected page, and the victim's privileges determine the impact. The tests confirm storage and the unsafe HTML sink; browser execution remains unverified.
+
+5. **V3 — Sealed-pick IDOR: easy, targeted confidentiality loss.** An authenticated player changes a user ID to read another player's card before release. This is easy to automate across the small roster and undermines the promised secrecy and competitive fairness. It ranks below SQL injection because the exposed data is narrower, and below XSS because it does not grant actions as another user. Early disclosure alone does not change results, roles, or awards.
+
+6. **V5 — Deadline bypass: serious fairness risk, with remaining checks.** A direct API request bypasses the browser's deadline restriction, so a player can submit or replace an entry in a closed but unsettled week. The remaining server checks still require five different, scheduled games and an open, locked week; finalized games and settled weeks are rejected. That narrows the demonstrated impact compared with direct administrative or payout control. It remains High because late information can create an unfair advantage. If a completed game remains marked scheduled until score sync, its known outcome could be used to cheat; that scenario would move this issue above sealed-pick disclosure.
+
+**When to change the order:** Raise XSS if commissioner exposure is routine or browser execution is confirmed; raise SQL injection if writes or session compromise are demonstrated; raise the deadline bypass if known-result picks are accepted; and treat payout tampering as an immediate payment incident if an automated payment system trusts those awards. The list is a remediation starting point, not a universal severity order.
+
 ## Reproduce locally
 
 Sign in as Alice using the controls. Run each exercise independently after a restart if needed; V2 changes the current account’s role and therefore affects other player-only operations.
