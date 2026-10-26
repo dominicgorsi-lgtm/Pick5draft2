@@ -1,5 +1,6 @@
 import { pacificParts, pacificInstant, weekDeadlines } from '../rules.js';
 export const DEMO_PASSWORD='Interview-only-2026!';
+export const BOB_PASSWORD='Bob-owner-demo-2026!';
 export const WEEK={rollover:1,completed:2,late:3,open:4};
 export const ACCOUNTS=[
  {id:1,email:'commissioner@pool.test',name:'Commissioner',role:'admin'},
@@ -18,7 +19,7 @@ export function seedFixtures(db,hash,at=new Date()){
  const end=new Date(day.getTime()-sinceTuesday*86400000);
  const lastWed=new Date(end.getTime()-6*86400000).toISOString().slice(0,10);
  const priorWed=new Date(end.getTime()-13*86400000).toISOString().slice(0,10);
- for(const a of ACCOUNTS)run('INSERT INTO users(id,email,name,password,role) VALUES(?,?,?,?,?)',a.id,a.email,a.name,hash(DEMO_PASSWORD),a.role);
+ for(const a of ACCOUNTS)run('INSERT INTO users(id,email,name,password,role) VALUES(?,?,?,?,?)',a.id,a.email,a.name,hash(a.id===3?BOB_PASSWORD:DEMO_PASSWORD),a.role);
  const prior=weekDeadlines(priorWed),last=weekDeadlines(lastWed);
  const weeks=[
   {id:1,label:'Prior week · $250 rollover',...prior,status:'settled',pot:25000,carry:25000},

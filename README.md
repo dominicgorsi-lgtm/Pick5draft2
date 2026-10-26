@@ -56,7 +56,7 @@ Render deployment status and browser visual QA have not been verified from this 
 
 ## Hosted ownership exercise
 
-Open `/demo/exercise` or `/demo/presentation` after deployment. Sign in as Alice using the on-screen button, open Bob's card, change a pick and save. Then sign in as Bob to verify the real change. This is one intentional ownership bug in simulated data. [HOSTED-DEMO.md](HOSTED-DEMO.md) gives the demonstrate → patch → deploy → retest flow.
+Open `/demo/exercise` or `/demo/presentation` after deployment. Sign in as Alice normally, change `player=2` to `player=3` in the browser address, and save a change to Bob's card. Then sign in as Bob to verify the real change. This is one intentional ownership bug in simulated data. [HOSTED-DEMO.md](HOSTED-DEMO.md) gives the demonstrate → patch → deploy → retest flow.
 
 ## Render deployment
 

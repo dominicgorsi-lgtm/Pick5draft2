@@ -19,7 +19,7 @@ test('hosted exercise isolates real pool data and reproduces one deliberate owne
  try{
  for(const [path,expected]of [['/presentation','/demo/presentation'],['/slides','/demo/slides'],['/demo','/demo/']])assert.equal((await request(path)).headers.location,expected);
  for(const path of ['/demo/','/demo/presentation','/demo/exercise','/demo/ownership.js','/demo/slides','/demo/app.js','/demo/lab.js','/demo/slides.js','/demo/style.css'])assert.equal((await request(path)).status,200);
- const page=await request('/demo/presentation');assert.match(page.text,/Whose picks can you change/);assert.match(page.text,/Repeat last save request/);assert.doesNotMatch(page.headers['content-security-policy'],/unsafe-inline/);
+ const page=await request('/demo/presentation');assert.match(page.text,/Your weekly picks/);assert.doesNotMatch(page.text,/data-owner=|data-login=/);assert.match(page.text,/id="loginForm"/);assert.match(page.text,/Repeat last save request/);assert.doesNotMatch(page.headers['content-security-policy'],/unsafe-inline/);
  const live=await request('/api/state');assert.equal(live.data.players,0);assert.equal(live.data.week,null);
  const history=(await demo('state?week=2')).data;assert.equal(history.players,25);assert.equal(history.week.pot,50000);assert.equal(history.standings.filter(s=>s.win===5).length,2);assert.equal(history.standings.reduce((sum,s)=>sum+s.award,0),50000);assert.equal(history.providerConnected,false);assert.ok(!JSON.stringify(history).includes('real-provider-secret-for-test'));
  const presenter=await demo('login',{email:'presenter@pool.test',password:'Interview-only-2026!'});assert.equal(presenter.status,200);assert.match(presenter.headers['set-cookie'],/^demo_pool_session=/);assert.match(presenter.headers['set-cookie'],/Path=\/demo;/);assert.match(presenter.headers['set-cookie'],/Secure/);
@@ -38,7 +38,7 @@ test('hosted exercise isolates real pool data and reproduces one deliberate owne
  // Intentional single bug: Alice is a player but can read and write Bob's entry.
  assert.equal((await demo('entries/3')).status,401);
  assert.equal((await demo('entries/3',undefined,presenter.cookie)).status,403);
- const bob=await demo('login',{email:'bob@pool.test',password:'Interview-only-2026!'});assert.equal(bob.data.user.role,'player');
+ const bob=await demo('login',{email:'bob@pool.test',password:'Bob-owner-demo-2026!'});assert.equal(bob.data.user.role,'player');
  const before=await demo('entries/3',undefined,bob.cookie);assert.equal(before.status,200);assert.ok(before.data.picks.every(p=>p.side==='away'));
  const unauthorizedRead=await demo('entries/3',undefined,cookie);assert.equal(unauthorizedRead.status,200);assert.equal(unauthorizedRead.data.actor.id,2);assert.equal(unauthorizedRead.data.owner.id,3);
  const changed=before.data.picks.map(p=>({...p}));changed[0].side='home';
@@ -53,7 +53,7 @@ test('hosted exercise isolates real pool data and reproduces one deliberate owne
  const context={document:{querySelector:()=>({}),addEventListener:()=>{}},window:{addEventListener:()=>{}},setInterval:()=>{},Intl,Date,URLSearchParams};vm.runInNewContext(source,context);
  const html=context.renderDemoStandings(stored);assert.ok(!html.includes(payload));assert.ok(html.includes('&lt;img'));
  assert.equal((await demo('lab/reset',{},cookie)).status,403);const reset=await demo('lab/reset',{},presenter.cookie);assert.equal(reset.status,200);assert.equal((await demo('lab/scenario')).data.currentEntries,23);
- const bobAfterReset=await demo('login',{email:'bob@pool.test',password:'Interview-only-2026!'});assert.ok((await demo('entries/3',undefined,bobAfterReset.cookie)).data.picks.every(p=>p.side==='away'));
+ const bobAfterReset=await demo('login',{email:'bob@pool.test',password:'Bob-owner-demo-2026!'});assert.ok((await demo('entries/3',undefined,bobAfterReset.cookie)).data.picks.every(p=>p.side==='away'));
  const retained=(await request('/api/state',undefined,real.cookie)).data;assert.equal(retained.user.role,'admin');assert.equal(retained.week.label,'Real pool preservation');assert.equal(retained.players,0);
  assert.equal((await demo('state',undefined,cookie)).data.user,null);
  }finally{rmSync(temp,{recursive:true,force:true});}
